@@ -14,12 +14,14 @@ function [cluster_lables, center_idxs] = cluster_dp(dist, para)
 
 %% Estimate dc
 disp('Estimating dc...');
-percent = para.percent;%para.percent;
-N = size(dist,1)^2;
-position = size(dist,1)+round(N*percent/100);
-sda = sort(dist(:));
+percent = para.percent;
+N = size(dist,1);
+position = round(N*(N-1)*percent/100);
+tri_u = triu(dist,1);
+sda = sort(tri_u(tri_u~=0));
 dc = sda(position);
-% dc = 0.1464+(14.5557-0.1464)/50;
+clear sda; clear tri_u;
+
 %% Compute rho(density)
 fprintf('Computing Rho with gaussian kernel of radius: %12.6f\n', dc);
 switch para.method
@@ -36,27 +38,26 @@ end
 disp('Computing delta...');
 delta = zeros(size(rho));
 nneigh = zeros(size(rho));
-for i = 1:size(dist,1)
-    range = find(rho>rho(i)); % rho(j) must greater than rho(i)
-    if ~isempty(range)
-        [delta(i), tmp_idx] = min(dist(i,range));
-        nneigh(i) = range(tmp_idx);
-    else
-        delta(i) = -1; % the biggest rho
-        nneigh(i) = 0;
-    end
+
+delta(ordrho(1)) = -1;
+nneigh(ordrho(1)) = 0;
+for i = 2:size(dist,1)
+    range = ordrho(1:i-1);
+    [delta(ordrho(i)), tmp_idx] = min(dist(ordrho(i),range));
+    nneigh(ordrho(i)) = range(tmp_idx); 
 end
-delta(delta==-1) = max(delta(:));
+delta(ordrho(1)) = max(delta(:));
 
 %% Decision graph, choose min rho and min delta
-figure(1);
+figure(10000);
 plot(rho(:),delta(:),'o','MarkerSize',5,'MarkerFaceColor','k','MarkerEdgeColor','k');
 title ('Decision Graph','FontSize',15.0)
 xlabel ('\rho')
 ylabel ('\delta')
-rect = getrect(1); % get user decision
+rect = getrect(10000); % get user decision
 rho_min=rect(1);
 delta_min=rect(2);
+close all;
 bad_idx = find(rho < rho_min);
 
 %% Find cluster centers
@@ -69,7 +70,7 @@ for i = 1:length(center_idxs)
     end
 end
 center_idxs(center_idxs==-1) = [];
-
+disp([num2str(length(center_idxs)),' cluster centers found...']);
 %% Assignment
 % raw assignment
 disp('Assigning data-points into clusters...');
@@ -78,11 +79,12 @@ for i = 1:length(center_idxs)
     cluster_lables(center_idxs(i)) = i;
 end
 for i=1:length(cluster_lables)
-  if (cluster_lables(ordrho(i))==-1)
-    cluster_lables(ordrho(i)) = cluster_lables(nneigh(ordrho(i)));
-  end
+    if (cluster_lables(ordrho(i))==-1)
+        cluster_lables(ordrho(i)) = cluster_lables(nneigh(ordrho(i)));
+    end
 end
 raw_cluster_lables = cluster_lables;
+
 % find and cut off halo region
 disp('Cut off halo regions...');
 for i = 1:length(center_idxs)
@@ -91,12 +93,12 @@ for i = 1:length(center_idxs)
     tmp_dist(:,tmp_idx) = max(dist(:));
     tmp_rho = rho(tmp_idx);
     tmp_lables = raw_cluster_lables(tmp_idx);
-%     tmp_range = 1:length(tmp_idx);
     tmp_border = find(sum(tmp_dist<dc,2)>0);
     if ~isempty(tmp_border)
         rho_b = max(tmp_rho(tmp_border));
         halo_idx = rho(tmp_idx) < rho_b;
-        tmp_lables(halo_idx) = 0; % lable equals to 0 means it's in the halo region
+        tmp_lables(halo_idx) = 0;
+        % lable equals to 0 means it's in the halo region
         cluster_lables(tmp_idx) = tmp_lables;
     end
 end
